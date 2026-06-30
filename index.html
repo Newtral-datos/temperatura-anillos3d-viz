@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Visualización 3D de temperaturas por estación AEMET: un anillo por año, deformado mes a mes según la temperatura.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌡️</text></svg>">
+    <title>Temperatura en 3D</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --brand: #01f3b3;
+            --brand-dark: #00c994;
+            --brand-xlight: #e6fef7;
+            --brand-light: #c0fce9;
+            --bg-primary: #ffffff;
+            --bg-secondary: #ffffff;
+            --bg-chart: #ffffff;
+            --text-primary: #0d2621;
+            --text-secondary: #4a7068;
+            --text-muted: #8aaba5;
+            --border-color: #cceee5;
+            --border-light: #d8f0e9;
+            --input-bg: #f9fdfb;
+            --shadow: rgba(1, 243, 179, 0.07);
+            --shadow-strong: rgba(1, 243, 179, 0.14);
+        }
+
+        body {
+            font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            height: 100vh;
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px 24px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        header { text-align: center; margin-bottom: 20px; position: relative; }
+
+        #logo-newtral {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 32px;
+            width: auto;
+            opacity: 0.85;
+        }
+
+        h1 {
+            font-size: 1.7rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        h1 span {
+            background: #01f3b3;
+            padding: 2px 10px;
+            border-radius: 10px;
+            color: #000;
+            box-shadow: 0px 4px 18px rgba(0,0,0,0.08);
+            letter-spacing: -0.3px;
+        }
+
+        .subtitle {
+            font-size: 0.7rem;
+            color: #aaaaaa;
+            font-weight: 400;
+            font-style: italic;
+            letter-spacing: 0.3px;
+        }
+
+        .main-layout { display: flex; gap: 18px; flex: 1; min-height: 0; }
+
+        .left-panel {
+            width: 200px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .right-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+        /* ── Panel derecho: olas de calor ── */
+        .olas-panel {
+            width: 178px;
+            flex-shrink: 0;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 13px 12px 10px;
+            box-shadow: 0 2px 12px var(--shadow);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .olas-panel > .olas-panel-title {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--brand-dark);
+            margin-bottom: 8px;
+            flex-shrink: 0;
+        }
+
+        #olasGrid {
+            overflow-y: auto;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .panel-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 9px 11px;
+            box-shadow: 0 2px 12px var(--shadow);
+        }
+
+        .panel-card label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.62rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.1px;
+            color: var(--brand-dark);
+        }
+
+        select, input[type="text"] {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1.5px solid var(--border-light);
+            color: var(--text-primary);
+            padding: 6px 9px;
+            border-radius: 7px;
+            font-size: 0.78rem;
+            font-family: inherit;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238aaba5' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 9px center;
+            padding-right: 26px;
+        }
+
+        select:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: var(--brand);
+            box-shadow: 0 0 0 3px rgba(1, 243, 179, 0.18);
+        }
+
+        select:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .toggle-group {
+            display: flex;
+            background: var(--input-bg);
+            border: 1.5px solid var(--border-light);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .toggle-btn {
+            flex: 1;
+            padding: 6px 4px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            font-family: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            border-right: 1px solid var(--border-light);
+        }
+
+        .toggle-btn:last-child { border-right: none; }
+
+        .toggle-btn:hover {
+            background: var(--brand-xlight);
+            color: var(--text-primary);
+        }
+
+        .toggle-btn.active {
+            background: var(--brand);
+            color: #0d2621;
+            font-weight: 600;
+        }
+
+        .toggle-btn.active:hover { background: var(--brand-dark); }
+
+        .station-info {
+            margin-top: 6px;
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .station-info strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .years-legend {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            margin-top: 6px;
+        }
+
+        .year-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 7px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            font-size: 0.75rem;
+        }
+
+        .year-item:hover { background: var(--brand-xlight); }
+
+        .year-swatch {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .year-item .year-label { flex: 1; font-weight: 500; }
+
+        .year-item .year-avg {
+            color: var(--text-muted);
+            font-size: 0.67rem;
+        }
+
+        .year-item.sin-datos { opacity: 0.4; cursor: default; }
+
+        .chart-container { flex: 1; display: flex; flex-direction: column; position: relative; min-height: 0; }
+
+        .chart-wrapper {
+            position: relative;
+            flex: 1;
+            border-radius: 14px;
+            overflow: hidden;
+            background: var(--bg-chart);
+            min-height: 0;
+            border: 1.5px solid var(--border-color);
+            box-shadow: 0 4px 20px var(--shadow);
+        }
+
+        .chart-wrapper canvas { display: block; }
+
+        .no-data-message {
+            position: absolute;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            text-align: center;
+            font-weight: 400;
+        }
+
+        .instructions {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            margin-top: 9px;
+            letter-spacing: 0.2px;
+        }
+
+        /* ── Popup de año ── */
+        #yearPopup {
+            position: fixed;
+            z-index: 999;
+            background: #fff;
+            border: 1.5px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(1,243,179,0.1);
+            min-width: 310px;
+            max-width: 360px;
+            pointer-events: none;
+            opacity: 0;
+            transform: translateY(4px);
+            transition: opacity 0.15s ease, transform 0.15s ease;
+        }
+
+        #yearPopup.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        .popup-header {
+            background: linear-gradient(135deg, #01f3b3 0%, #01f3b3 100%);
+            color: #0d2621;
+            padding: 10px 14px;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .popup-header .popup-year {
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+
+        .popup-header .popup-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .popup-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+
+        .popup-table thead th {
+            padding: 6px 10px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-primary);
+        }
+
+        .popup-table thead th:first-child { text-align: left; }
+
+        .popup-table tbody td {
+            padding: 5px 10px;
+            text-align: center;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .popup-table tbody tr:last-child td { border-bottom: none; }
+
+        .popup-table tbody td:first-child {
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .popup-table .cell-max { color: #c0392b; font-weight: 600; }
+        .popup-table .cell-min { color: #2980b9; font-weight: 600; }
+        .popup-table .cell-dia { color: var(--text-muted); font-size: 0.7rem; }
+
+        /* ── Overlay selector de años ── */
+        #yearOverlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.90);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1.5px solid var(--border-color);
+            border-radius: 20px;
+            padding: 4px 12px;
+            z-index: 10;
+            display: none;
+            box-shadow: 0 2px 12px var(--shadow);
+            align-items: center;
+            gap: 3px 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .overlay-title {
+            font-size: 0.6rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--brand-dark);
+            white-space: nowrap;
+        }
+
+        .overlay-all-none {
+            display: flex;
+            gap: 3px;
+            font-size: 0.62rem;
+            color: var(--text-muted);
+            align-items: center;
+            padding-right: 8px;
+            border-right: 1px solid var(--border-light);
+        }
+
+        .overlay-all-none span {
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .overlay-all-none span:hover { color: var(--brand-dark); }
+
+        #overlayItems {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px 6px;
+            align-items: center;
+        }
+
+        .overlay-year-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 1px 4px;
+            border-radius: 4px;
+            font-size: 0.73rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .overlay-year-item:hover { background: var(--brand-xlight); }
+
+        .overlay-swatch { display: none; }
+
+        .overlay-year-item input[type="checkbox"] {
+            accent-color: var(--brand-dark);
+            width: 13px;
+            height: 13px;
+            cursor: pointer;
+            flex-shrink: 0;
+            padding: 0;
+            margin: 0;
+            background: none;
+            background-image: none;
+            border: none;
+            appearance: auto;
+            -webkit-appearance: auto;
+        }
+
+        .overlay-swatch {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* ── Heatmap olas de calor ── */
+        .olas-grid {
+            display: grid;
+            grid-template-columns: 34px repeat(12, 1fr);
+            gap: 2px;
+        }
+        .olas-grid-month {
+            text-align: center;
+            font-size: 0.56rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            padding-bottom: 3px;
+        }
+        .olas-grid-year {
+            font-size: 0.66rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            line-height: 1;
+            padding-right: 3px;
+        }
+        .olas-grid-year.active-year {
+            color: var(--brand-dark);
+        }
+        .olas-cell {
+            height: 14px;
+            border-radius: 2px;
+            background: var(--border-light);
+            opacity: 0.3;
+        }
+        .olas-cell.hot {
+            opacity: 1;
+            cursor: pointer;
+            transition: filter 0.1s;
+        }
+        .olas-cell.hot:hover { filter: brightness(1.15); }
+
+        /* ── Tooltip olas de calor ── */
+        #olaTooltip {
+            position: fixed;
+            z-index: 998;
+            background: #fff;
+            border: 1.5px solid #ffc8a0;
+            border-radius: 10px;
+            padding: 8px 13px;
+            font-size: 0.78rem;
+            color: var(--text-primary);
+            box-shadow: 0 4px 18px rgba(200, 60, 0, 0.13);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.12s ease;
+            max-width: 210px;
+            line-height: 1.65;
+        }
+        #olaTooltip.visible { opacity: 1; }
+        .ola-header {
+            font-weight: 700;
+            color: #c43000;
+            font-size: 0.82rem;
+            margin-bottom: 3px;
+        }
+        .ola-badge {
+            background: #fff0e8;
+            color: #c43000;
+            border: 1px solid #ffc0a0;
+            border-radius: 10px;
+            padding: 1px 7px;
+            font-size: 0.67rem;
+            font-weight: 600;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* ── Tablet: sin panel de olas ── */
+        @media (max-width: 1050px) {
+            .olas-panel { display: none !important; }
+            .left-panel { width: 175px; }
+        }
+
+        /* ── Móvil ── */
+        @media (max-width: 680px) {
+            body { height: auto; overflow-y: auto; }
+
+            .container { height: auto; padding: 10px 12px 16px; }
+
+            /* Header compacto: logo oculto, título más pequeño */
+            header { margin-bottom: 6px; }
+            #logo-newtral { display: none; }
+            h1 { font-size: 1rem; }
+            h1 span { padding: 2px 8px; border-radius: 8px; }
+            .subtitle { font-size: 0.62rem; }
+
+            .main-layout { flex-direction: column; gap: 8px; }
+
+            /* Controles en fila compacta */
+            .left-panel {
+                width: 100%;
+                overflow-y: visible;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 6px;
+                min-height: unset;
+            }
+
+            /* Métrica ocupa toda la fila; años e instrucciones se ocultan */
+            .left-panel .panel-card:nth-child(3) { grid-column: 1 / -1; }
+            .left-panel #yearsCard { display: none !important; }
+            .instructions { display: none; }
+
+            .panel-card { padding: 7px 9px; }
+
+            /* Canvas 3D: grande */
+            .right-panel {
+                height: calc(100vw - 24px);
+                min-height: 340px;
+                max-height: 600px;
+            }
+
+            .chart-wrapper { border-radius: 10px; }
+
+            /* Overlay años: más compacto para caber en una línea */
+            #yearOverlay {
+                padding: 3px 8px;
+                gap: 2px 4px;
+                border-radius: 14px;
+                top: 7px;
+                left: 6px;
+                right: 6px;
+            }
+            .overlay-title { font-size: 0.52rem; letter-spacing: 0.8px; }
+            .overlay-all-none { font-size: 0.52rem; gap: 2px; padding-right: 5px; }
+            .overlay-year-item { font-size: 0.58rem; padding: 1px 2px; gap: 2px; }
+            .overlay-year-item input[type="checkbox"] { width: 10px; height: 10px; }
+            #overlayItems { gap: 1px 3px; }
+
+            /* Panel olas debajo del canvas */
+            .olas-panel {
+                display: flex !important;
+                width: 100%;
+                height: auto;
+                max-height: 220px;
+            }
+
+            #olasGrid { max-height: 170px; }
+
+            /* Popup de año centrado arriba */
+            #yearPopup {
+                position: fixed;
+                top: 10px !important;
+                left: 50% !important;
+                transform: translateX(-50%);
+                min-width: 280px;
+                max-width: 90vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <img id="logo-newtral" src="logo_newtral.png" alt="Newtral">
+            <h1><span>Explorador de temperaturas en 3D</span></h1>
+            <p class="subtitle">Datos extraídos de la AEMET</p>
+        </header>
+
+        <div class="main-layout">
+            <div class="left-panel">
+                <div class="panel-card">
+                    <label>Provincia</label>
+                    <select id="provinciaSelect">
+                        <option value="">Cargando…</option>
+                    </select>
+                </div>
+                <div class="panel-card">
+                    <label>Estación</label>
+                    <select id="estacionSelect" disabled>
+                        <option value="">Selecciona...</option>
+                    </select>
+                    <div class="station-info" id="stationInfo"></div>
+                </div>
+                <div class="panel-card">
+                    <label>Métrica del anillo</label>
+                    <div class="toggle-group" id="metricToggle">
+                        <button class="toggle-btn" data-value="tmax">Máxima</button>
+                        <button class="toggle-btn active" data-value="tmed">Media</button>
+                        <button class="toggle-btn" data-value="tmin">Mínima</button>
+                    </div>
+                </div>
+                <div class="panel-card" id="yearsCard" style="display:none;">
+                    <label>Años (pasa el ratón para resaltar)</label>
+                    <div class="years-legend" id="yearsLegend"></div>
+                </div>
+                <p class="instructions">Arrastra para rotar</p>
+            </div>
+
+            <div class="right-panel">
+                <div class="chart-container">
+                    <div class="chart-wrapper" id="chartWrapper">
+                        <div class="no-data-message" id="noDataMsg">Selecciona provincia y estación</div>
+                        <div id="yearOverlay">
+                            <div class="overlay-title">Años</div>
+                            <div class="overlay-all-none">
+                                <span id="overlayAll">Todo</span>
+                                <span>·</span>
+                                <span id="overlayNone">Ninguno</span>
+                            </div>
+                            <div id="overlayItems"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="olas-panel" id="olasPanel" style="display:none;">
+                <div class="olas-panel-title">Olas de calor</div>
+                <div id="olasGrid"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="yearPopup"></div>
+    <div id="olaTooltip"></div>
+
+    <script>
+        const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+        const RADIUS = 4;
+        const RADIUS_OFFSET = 0.12;
+        const MIN_HEIGHT = 0.4;
+        const MAX_HEIGHT = 5.0;
+        const FADE_SPEED = 0.15;
+
+        let DATA = null;
+        let OLAS_DATA = null;
+        let GLOBAL_RANGO = null;
+        let metric = 'tmed';
+        let currentEstacion = null;
+        let hoveredYearIndex = -1;
+        let selectedLabelYear = -1;
+
+        // Three.js
+        let scene, camera, renderer, controls;
+        let yearGroups = [];
+        let staticGroup = null;
+        let yAxisGroup = null;
+
+        // Paleta de colo
+        function tempToHexColor(value, rango) {
+            const norm = Math.max(0, Math.min(1, (value - rango[0]) / ((rango[1] - rango[0]) || 1)));
+            const stops = [
+                [0.00, 0x05, 0x3f, 0xc8],
+                [0.28, 0x29, 0xb6, 0xe8],
+                [0.52, 0xff, 0xf0, 0x3a],
+                [0.75, 0xff, 0x7a, 0x10],
+                [1.00, 0xcc, 0x10, 0x10],
+            ];
+            let i = 0;
+            while (i < stops.length - 2 && norm > stops[i + 1][0]) i++;
+            const [t0, r0, g0, b0] = stops[i];
+            const [t1, r1, g1, b1] = stops[i + 1];
+            const a = (norm - t0) / ((t1 - t0) || 1);
+            return (
+                (Math.round(r0 + (r1 - r0) * a) << 16) |
+                (Math.round(g0 + (g1 - g0) * a) << 8) |
+                 Math.round(b0 + (b1 - b0) * a)
+            );
+        }
+
+        // Tubo con vertex colors interpolando la temperatura a lo largo del recorrido
+        function buildColoredTube(pointTemps, closed, rango) {
+            const N = pointTemps.length;
+            const tubularSegments = closed ? 96 : Math.max(16, N * 8);
+            const radialSegments = 10;
+            const curve = new THREE.CatmullRomCurve3(pointTemps.map(pt => pt.point), closed);
+            const geo = new THREE.TubeGeometry(curve, tubularSegments, 0.045, radialSegments, closed);
+            const totalVerts = (tubularSegments + 1) * (radialSegments + 1);
+            const cols = new Float32Array(totalVerts * 3);
+
+            for (let seg = 0; seg <= tubularSegments; seg++) {
+                const t = seg / tubularSegments;
+                let temp;
+                if (closed) {
+                    const tp = t * N;
+                    const i0 = Math.floor(tp) % N;
+                    const i1 = (i0 + 1) % N;
+                    const al = tp - Math.floor(tp);
+                    temp = pointTemps[i0].temp * (1 - al) + pointTemps[i1].temp * al;
+                } else {
+                    const tp = t * (N - 1);
+                    const i0 = Math.min(Math.floor(tp), N - 2);
+                    const i1 = i0 + 1;
+                    const al = tp - i0;
+                    temp = pointTemps[i0].temp * (1 - al) + pointTemps[i1].temp * al;
+                }
+                const hex = tempToHexColor(temp, rango);
+                const cr = ((hex >> 16) & 0xff) / 255;
+                const cg = ((hex >> 8) & 0xff) / 255;
+                const cb = (hex & 0xff) / 255;
+                for (let ri = 0; ri <= radialSegments; ri++) {
+                    const idx = (seg * (radialSegments + 1) + ri) * 3;
+                    cols[idx] = cr; cols[idx + 1] = cg; cols[idx + 2] = cb;
+                }
+            }
+
+            geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+            const mat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.8 });
+            const tube = new THREE.Mesh(geo, mat);
+            tube.userData.baseOpacity = 0.8;
+            return tube;
+        }
+
+        // ── Olas de calor ──────────────────────────────────────────────────────
+
+        function parseCSVLine(line) {
+            const result = [];
+            let inQuote = false, current = '';
+            for (const ch of line) {
+                if (ch === '"') { inQuote = !inQuote; }
+                else if (ch === ',' && !inQuote) { result.push(current); current = ''; }
+                else { current += ch; }
+            }
+            result.push(current);
+            return result;
+        }
+
+        function parseOlasCSV(text) {
+            const lines = text.trim().split('\n');
+            const result = {};
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const [anioStr, inicio, fin, durStr, anomStr, tmaxStr, provStr] = parseCSVLine(lines[i]);
+                const year = parseInt(anioStr);
+                const [, mI] = inicio.split('/').map(Number);
+                const [, mF] = fin.split('/').map(Number);
+                const meses = [];
+                for (let m = mI - 1; m <= mF - 1; m++) meses.push(m);
+                if (!result[year]) result[year] = [];
+                result[year].push({
+                    inicio, fin,
+                    duracion: parseInt(durStr),
+                    anomalia: parseFloat(anomStr.replace(',', '.')),
+                    tmax: parseFloat(tmaxStr.replace(',', '.')),
+                    provincias: parseInt(provStr),
+                    meses
+                });
+            }
+            return result;
+        }
+
+        function anomaliaToColor(anomalia) {
+            // 1.0 → naranja claro  /  4.5 → rojo oscuro
+            const norm = Math.max(0, Math.min(1, (anomalia - 1.0) / 3.5));
+            const r = 0xff;
+            const g = Math.round(0x88 * (1 - norm));
+            return (r << 16) | (g << 8);
+        }
+
+        function buildOlasGrid() {
+            const panel = document.getElementById('olasPanel');
+            const container = document.getElementById('olasGrid');
+            container.innerHTML = '';
+            if (!OLAS_DATA || !Object.keys(OLAS_DATA).length) { panel.style.display = 'none'; return; }
+            panel.style.display = 'flex';
+
+            const allAnios = Object.keys(OLAS_DATA).map(Number).sort((a, b) => b - a); // desc
+
+            const grid = document.createElement('div');
+            grid.className = 'olas-grid';
+
+            // Cabecera
+            grid.appendChild(document.createElement('div'));
+            ['E','F','M','A','M','J','J','A','S','O','N','D'].forEach(m => {
+                const h = document.createElement('div');
+                h.className = 'olas-grid-month';
+                h.textContent = m;
+                grid.appendChild(h);
+            });
+
+            allAnios.forEach(anio => {
+                const yl = document.createElement('div');
+                yl.className = 'olas-grid-year';
+                yl.dataset.year = anio;
+                yl.textContent = anio;
+                grid.appendChild(yl);
+
+                for (let m = 0; m < 12; m++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'olas-cell';
+                    const olas = (OLAS_DATA[anio] || []).filter(o => o.meses.includes(m));
+                    if (olas.length) {
+                        const ola = olas.reduce((a, b) => a.anomalia > b.anomalia ? a : b);
+                        const hex = anomaliaToColor(ola.anomalia);
+                        cell.style.background = '#' + hex.toString(16).padStart(6, '0');
+                        cell.classList.add('hot');
+                        cell.addEventListener('mouseenter', (e) => showOlaTooltip(e, { ...ola, anio, mes: m }));
+                        cell.addEventListener('mousemove',  (e) => showOlaTooltip(e, { ...ola, anio, mes: m }));
+                        cell.addEventListener('mouseleave', hideOlaTooltip);
+                    }
+                    grid.appendChild(cell);
+                }
+            });
+
+            container.appendChild(grid);
+        }
+
+        // Marca en el heatmap qué años tienen anillo activo en la viz
+        function highlightOlasGridYears(activeYears) {
+            const set = new Set(activeYears.map(String));
+            document.querySelectorAll('.olas-grid-year').forEach(el => {
+                el.classList.toggle('active-year', set.has(el.dataset.year));
+            });
+        }
+
+        function showOlaTooltip(e, ola) {
+            const t = document.getElementById('olaTooltip');
+            t.innerHTML = `
+                <div class="ola-header">Ola de calor ${ola.anio}</div>
+                <div>${ola.inicio} – ${ola.fin}</div>
+                <div><strong>${ola.duracion} días</strong> | ${MONTHS[ola.mes]}</div>
+                <div>Anomalía: <strong>+${ola.anomalia.toFixed(1)} °C</strong></div>
+                <div>T Máxima: <strong>${ola.tmax.toFixed(1)} °C</strong></div>
+                <div>${ola.provincias} provincias afectadas</div>
+            `;
+            const margin = 14;
+            const tw = t.offsetWidth || 210;
+            const th = t.offsetHeight || 130;
+            let px = e.clientX + margin, py = e.clientY + margin;
+            if (px + tw > window.innerWidth - margin) px = e.clientX - tw - margin;
+            if (py + th > window.innerHeight - margin) py = e.clientY - th - margin;
+            t.style.left = px + 'px';
+            t.style.top  = py + 'px';
+            t.classList.add('visible');
+        }
+
+        function hideOlaTooltip() {
+            document.getElementById('olaTooltip').classList.remove('visible');
+        }
+
+        // ───────────────────────────────────────────────────────────────────────
+
+        function initScene() {
+            const container = document.getElementById('chartWrapper');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            camera.position.set(7.9, 4.7, 7.9);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 1.5, 0);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 4;
+            controls.maxDistance = 20;
+            controls.minPolarAngle = 0.05;
+            controls.maxPolarAngle = Math.PI - 0.05;
+            controls.update();
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+            const d1 = new THREE.DirectionalLight(0xffffff, 0.4); d1.position.set(5, 10, 5); scene.add(d1);
+            const d2 = new THREE.DirectionalLight(0xffffff, 0.3); d2.position.set(-5, 8, -5); scene.add(d2);
+
+            window.addEventListener('resize', handleResize);
+            new ResizeObserver(() => handleResize()).observe(container);
+            animate();
+        }
+
+        function handleResize() {
+            const container = document.getElementById('chartWrapper');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            if (!width || !height) return;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            animateOpacities();
+            renderer.render(scene, camera);
+        }
+
+        function animateOpacities() {
+            yearGroups.forEach((entry, idx) => {
+                if (!entry.group.visible) return;
+                const targetMesh = hoveredYearIndex === -1 || hoveredYearIndex === idx ? 1 : 0.12;
+                entry.group.traverse(child => {
+                    if (child.isMesh && child.material && child.userData.baseOpacity !== undefined) {
+                        const target = child.userData.baseOpacity * targetMesh;
+                        const current = child.material.opacity;
+                        child.material.opacity = Math.abs(current - target) > 0.01
+                            ? current + (target - current) * FADE_SPEED
+                            : target;
+                    }
+                });
+            });
+        }
+
+        function clearYearGroups() {
+            yearGroups.forEach(entry => scene.remove(entry.group));
+            yearGroups = [];
+            selectedLabelYear = -1;
+        }
+
+        function setLabelVisibility(idx) {
+            yearGroups.forEach((entry, i) => {
+                entry.group.traverse(child => {
+                    if (child.isSprite && child.userData.isLabel) {
+                        child.visible = (i === idx);
+                    }
+                });
+            });
+        }
+
+        function buildStaticGuides() {
+            if (staticGroup) { scene.remove(staticGroup); staticGroup = null; }
+            const group = new THREE.Group();
+
+            const lineColor = 0x01f3b3;
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2 - Math.PI / 4;
+                const x = Math.sin(angle) * RADIUS;
+                const z = Math.cos(angle) * RADIUS;
+                const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(x, 0, z)];
+                const geo = new THREE.BufferGeometry().setFromPoints(points);
+                const mat = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: 0.4 });
+                group.add(new THREE.Line(geo, mat));
+            }
+
+            const ringGeo = new THREE.RingGeometry(RADIUS - 0.015, RADIUS + 0.015, 64);
+            const ringMat = new THREE.MeshBasicMaterial({
+                color: 0x01f3b3,
+                transparent: true,
+                opacity: 0.5,
+                side: THREE.DoubleSide
+            });
+            const groundRing = new THREE.Mesh(ringGeo, ringMat);
+            groundRing.rotation.x = -Math.PI / 2;
+            groundRing.position.y = 0.01;
+            group.add(groundRing);
+
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2 - Math.PI / 4;
+                const radius = RADIUS + 0.6;
+                const x = Math.sin(angle) * radius;
+                const z = Math.cos(angle) * radius;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 100; canvas.height = 50;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#4a7068';
+                ctx.font = '600 26px "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(MONTHS[i], 50, 25);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
+                sprite.position.set(x, 0.15, z);
+                sprite.scale.set(1, 0.5, 1);
+                group.add(sprite);
+            }
+
+            scene.add(group);
+            staticGroup = group;
+        }
+
+        function makeTempLabel(value, hexColor) {
+            const text = value != null ? value.toFixed(1) + '°' : '';
+            const canvas = document.createElement('canvas');
+            canvas.width = 96; canvas.height = 40;
+            const ctx = canvas.getContext('2d');
+            ctx.font = '700 22px "Inter", "Helvetica Neue", Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const tw = ctx.measureText(text).width;
+            const px = 7, py = 4;
+            ctx.fillStyle = 'rgba(255,255,255,0.82)';
+            ctx.beginPath();
+            const rx = (96 - tw) / 2 - px, ry = py, rw = tw + px * 2, rh = 40 - py * 2, r = 6;
+            ctx.moveTo(rx + r, ry); ctx.lineTo(rx + rw - r, ry);
+            ctx.arcTo(rx + rw, ry, rx + rw, ry + r, r);
+            ctx.lineTo(rx + rw, ry + rh - r);
+            ctx.arcTo(rx + rw, ry + rh, rx + rw - r, ry + rh, r);
+            ctx.lineTo(rx + r, ry + rh);
+            ctx.arcTo(rx, ry + rh, rx, ry + rh - r, r);
+            ctx.lineTo(rx, ry + r);
+            ctx.arcTo(rx, ry, rx + r, ry, r);
+            ctx.closePath();
+            ctx.fill();
+            // Oscurecer colores muy claros para legibilidad sobre fondo blanco
+            const ri = (hexColor >> 16) & 0xff;
+            const gi = (hexColor >> 8) & 0xff;
+            const bi = hexColor & 0xff;
+            const lum = (ri * 299 + gi * 587 + bi * 114) / 1000;
+            const factor = lum > 160 ? 0.55 : 1;
+            ctx.fillStyle = `rgb(${Math.round(ri*factor)},${Math.round(gi*factor)},${Math.round(bi*factor)})`;
+            ctx.fillText(text, 48, 20);
+            const texture = new THREE.CanvasTexture(canvas);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.92 }));
+            sprite.scale.set(0.72, 0.3, 1);
+            return sprite;
+        }
+
+        function buildRingForYear(anio, valores, yIndex, rango, metric) {
+            const group = new THREE.Group();
+            const radius = RADIUS + yIndex * RADIUS_OFFSET;
+            const pointsByMonth = [];
+
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2 - Math.PI / 4;
+                const v = valores[i];
+                if (v === null) { pointsByMonth.push(null); continue; }
+                const norm = Math.max(0, Math.min(1, (v - rango[0]) / ((rango[1] - rango[0]) || 1)));
+                const y = MIN_HEIGHT + norm * (MAX_HEIGHT - MIN_HEIGHT);
+                pointsByMonth.push(new THREE.Vector3(Math.sin(angle) * radius, y, Math.cos(angle) * radius));
+            }
+
+            const valoresValidos = valores.filter(v => v !== null);
+            let stat = null;
+            if (valoresValidos.length) {
+                if (metric === 'tmax') stat = Math.max(...valoresValidos);
+                else if (metric === 'tmin') stat = Math.min(...valoresValidos);
+                else stat = valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length;
+            }
+            const avgTemp = valoresValidos.length
+                ? valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length
+                : null;
+
+            // Esferas coloreadas por temperatura
+            for (let i = 0; i < 12; i++) {
+                if (!pointsByMonth[i]) continue;
+                const hexColor = tempToHexColor(valores[i], rango);
+                const sphereGeo = new THREE.SphereGeometry(0.12, 20, 20);
+                const sphereMat = new THREE.MeshLambertMaterial({ color: hexColor, transparent: true, opacity: 0.9 });
+                const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+                sphere.position.copy(pointsByMonth[i]);
+                sphere.userData.baseOpacity = 0.9;
+                group.add(sphere);
+
+                const label = makeTempLabel(valores[i], hexColor);
+                label.position.set(pointsByMonth[i].x, pointsByMonth[i].y + 0.32, pointsByMonth[i].z);
+                label.userData.isLabel = true;
+                label.visible = false;
+                group.add(label);
+            }
+
+            // Tubo con gradiente de temperatura
+            const todosConDato = pointsByMonth.every(p => p !== null);
+            if (todosConDato) {
+                const pointTemps = pointsByMonth.map((p, i) => ({ point: p, temp: valores[i] }));
+                group.add(buildColoredTube(pointTemps, true, rango));
+            } else {
+                let seg = [];
+                const flush = () => {
+                    if (seg.length >= 2) group.add(buildColoredTube(seg, false, rango));
+                    seg = [];
+                };
+                for (let i = 0; i < 12; i++) {
+                    if (pointsByMonth[i]) seg.push({ point: pointsByMonth[i], temp: valores[i] });
+                    else flush();
+                }
+                flush();
+            }
+
+            scene.add(group);
+            const swatchColor = avgTemp !== null ? tempToHexColor(avgTemp, rango) : 0x888888;
+            return { year: anio, group, stat, color: swatchColor };
+        }
+
+        function niceStep(range) {
+            if (range <= 15) return 5;
+            if (range <= 40) return 10;
+            return 20;
+        }
+
+        function buildYAxis(rango) {
+            if (yAxisGroup) { scene.remove(yAxisGroup); yAxisGroup = null; }
+            const [tMin, tMax] = rango;
+            if (!isFinite(tMin) || !isFinite(tMax) || tMax <= tMin) return;
+
+            const group = new THREE.Group();
+            const lineColor = 0x01f3b3;
+            const matAxis = new THREE.LineBasicMaterial({ color: 0x01f3b3, transparent: true, opacity: 0.6 });
+            const matGrid = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: 0.35 });
+
+            const linePts = [
+                new THREE.Vector3(0, MIN_HEIGHT, 0),
+                new THREE.Vector3(0, MAX_HEIGHT, 0)
+            ];
+            group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), matAxis));
+
+            const step = niceStep(tMax - tMin);
+            const firstTick = Math.ceil(tMin / step) * step;
+            const SEGMENTS = 64;
+            for (let t = firstTick; t <= tMax + 0.01; t += step) {
+                const norm = (t - tMin) / (tMax - tMin);
+                const y = MIN_HEIGHT + norm * (MAX_HEIGHT - MIN_HEIGHT);
+
+                const circPts = [];
+                for (let s = 0; s <= SEGMENTS; s++) {
+                    const a = (s / SEGMENTS) * Math.PI * 2;
+                    circPts.push(new THREE.Vector3(Math.sin(a) * RADIUS, y, Math.cos(a) * RADIUS));
+                }
+                group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(circPts), matGrid.clone()));
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 140; canvas.height = 52;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#4a7068';
+                ctx.font = '600 28px "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`${Math.round(t)}°`, 6, 26);
+                const texture = new THREE.CanvasTexture(canvas);
+                const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+                sprite.position.set(0.35, y, 0);
+                sprite.scale.set(1.05, 0.4, 1);
+                group.add(sprite);
+            }
+
+            scene.add(group);
+            yAxisGroup = group;
+        }
+
+        function renderEstacion(indicativo) {
+            clearYearGroups();
+            if (yAxisGroup) { scene.remove(yAxisGroup); yAxisGroup = null; }
+            const noData = document.getElementById('noDataMsg');
+            const overlay = document.getElementById('yearOverlay');
+
+            if (!indicativo || !DATA.datos[indicativo]) {
+                noData.style.display = 'block';
+                document.getElementById('yearsCard').style.display = 'none';
+                overlay.style.display = 'none';
+                highlightOlasGridYears([]);
+                if (staticGroup) { scene.remove(staticGroup); staticGroup = null; }
+                return;
+            }
+
+            noData.style.display = 'none';
+
+            const porAnio = DATA.datos[indicativo];
+            const anios = Object.keys(porAnio).map(Number).sort((a, b) => a - b);
+            const rango = GLOBAL_RANGO;
+
+            buildStaticGuides();
+            buildYAxis(rango);
+
+            // Panel izquierdo
+            const yearsLegend = document.getElementById('yearsLegend');
+            yearsLegend.innerHTML = '';
+            document.getElementById('yearsCard').style.display = 'block';
+
+            // Overlay de años dentro del canvas
+            overlay.style.display = 'flex';
+            const overlayItems = document.getElementById('overlayItems');
+            overlayItems.innerHTML = '';
+
+            anios.forEach((anio, idx) => {
+                const valores = porAnio[anio][metric];
+                const entry = buildRingForYear(anio, valores, idx, rango, metric);
+                yearGroups.push(entry);
+
+                const cssColor = '#' + entry.color.toString(16).padStart(6, '0');
+
+                // Item del panel izquierdo
+                let statText = '–';
+                if (entry.stat !== null) {
+                    if (metric === 'tmax') statText = entry.stat.toFixed(1) + '°C pico';
+                    else if (metric === 'tmin') statText = entry.stat.toFixed(1) + '°C mín';
+                    else statText = entry.stat.toFixed(1) + '°C media';
+                }
+                const item = document.createElement('div');
+                item.className = 'year-item';
+                const anioData = porAnio[anio];
+                item.innerHTML = `
+                    <span class="year-swatch" style="background:${cssColor}"></span>
+                    <span class="year-label">${anio}</span>
+                    <span class="year-avg">${statText}</span>
+                `;
+                item.addEventListener('mouseenter', (e) => {
+                    hoveredYearIndex = idx;
+                    showYearPopup(e, anio, cssColor, anioData);
+                });
+                item.addEventListener('mousemove', (e) => positionPopup(e));
+                item.addEventListener('mouseleave', () => {
+                    hoveredYearIndex = -1;
+                    hideYearPopup();
+                });
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const popup = document.getElementById('yearPopup');
+                    if (popup.classList.contains('visible') && popup.dataset.year === String(anio)) {
+                        hideYearPopup();
+                    } else {
+                        showYearPopup(e, anio, cssColor, anioData);
+                        popup.dataset.year = anio;
+                        popup.style.pointerEvents = 'auto';
+                    }
+                    if (selectedLabelYear === idx) {
+                        selectedLabelYear = -1;
+                        setLabelVisibility(-1);
+                    } else {
+                        selectedLabelYear = idx;
+                        setLabelVisibility(idx);
+                    }
+                });
+                yearsLegend.appendChild(item);
+
+                // Item del overlay dentro del canvas
+                const overlayItem = document.createElement('label');
+                overlayItem.className = 'overlay-year-item';
+                overlayItem.innerHTML = `
+                    <input type="checkbox" checked data-idx="${idx}">
+                    <span class="overlay-swatch" style="background:${cssColor}"></span>
+                    <span>${anio}</span>
+                `;
+                overlayItem.querySelector('input').addEventListener('change', (e) => {
+                    entry.group.visible = e.target.checked;
+                });
+                overlayItems.appendChild(overlayItem);
+            });
+
+            document.getElementById('overlayAll').onclick = () => {
+                overlayItems.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    cb.checked = true;
+                    yearGroups[+cb.dataset.idx].group.visible = true;
+                });
+            };
+            document.getElementById('overlayNone').onclick = () => {
+                overlayItems.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    cb.checked = false;
+                    yearGroups[+cb.dataset.idx].group.visible = false;
+                });
+            };
+
+            highlightOlasGridYears(anios);
+        }
+
+        function buildPopupHTML(anio, cssColor, anioData) {
+            const tmed = anioData.tmed || [];
+            const tmax = anioData.tmax || [];
+            const tmin = anioData.tmin || [];
+            const tmaxDia = anioData.tmax_dia || [];
+            const tminDia = anioData.tmin_dia || [];
+
+            const rows = MONTHS.map((mes, i) => {
+                const med = tmed[i] != null ? tmed[i].toFixed(1) + '°' : '–';
+                const mx  = tmax[i] != null ? tmax[i].toFixed(1) + '°' : '–';
+                const mn  = tmin[i] != null ? tmin[i].toFixed(1) + '°' : '–';
+                const mxDia = tmaxDia[i] != null ? `<span class="cell-dia">día ${tmaxDia[i]}</span>` : '';
+                const mnDia = tminDia[i] != null ? `<span class="cell-dia">día ${tminDia[i]}</span>` : '';
+                return `<tr>
+                    <td>${mes}</td>
+                    <td>${med}</td>
+                    <td><span class="cell-max">${mx}</span><br>${mxDia}</td>
+                    <td><span class="cell-min">${mn}</span><br>${mnDia}</td>
+                </tr>`;
+            }).join('');
+
+            return `
+                <div class="popup-header">
+                    <span class="popup-swatch" style="background:${cssColor}"></span>
+                    <span class="popup-year">${anio}</span>
+                </div>
+                <table class="popup-table">
+                    <thead>
+                        <tr>
+                            <th>Mes</th>
+                            <th>Media</th>
+                            <th>Máxima</th>
+                            <th>Mínima</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+        }
+
+        function showYearPopup(e, anio, cssColor, anioData) {
+            const popup = document.getElementById('yearPopup');
+            popup.innerHTML = buildPopupHTML(anio, cssColor, anioData);
+            popup.dataset.year = anio;
+            popup.classList.add('visible');
+            positionPopup(e);
+        }
+
+        function positionPopup(e) {
+            const popup = document.getElementById('yearPopup');
+            if (!popup.classList.contains('visible')) return;
+            if (window.innerWidth <= 680) {
+                // En móvil: centrado fijo en la parte superior
+                popup.style.left = '50%';
+                popup.style.top  = '10px';
+                popup.style.transform = 'translateX(-50%)';
+                return;
+            }
+            popup.style.transform = '';
+            const margin = 12;
+            const pw = popup.offsetWidth || 320;
+            const ph = popup.offsetHeight || 300;
+            let x = e.clientX + margin;
+            let y = e.clientY + margin;
+            if (x + pw > window.innerWidth - margin) x = e.clientX - pw - margin;
+            if (y + ph > window.innerHeight - margin) y = e.clientY - ph - margin;
+            popup.style.left = x + 'px';
+            popup.style.top  = y + 'px';
+        }
+
+        function hideYearPopup() {
+            const popup = document.getElementById('yearPopup');
+            popup.classList.remove('visible');
+            popup.dataset.year = '';
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.year-item') && !e.target.closest('#yearPopup')) {
+                hideYearPopup();
+            }
+        });
+
+        function populateProvincias() {
+            const select = document.getElementById('provinciaSelect');
+            select.innerHTML = '<option value="">Selecciona…</option>';
+            DATA.provincias.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p;
+                opt.textContent = p;
+                select.appendChild(opt);
+            });
+        }
+
+        function populateEstaciones(provincia) {
+            const select = document.getElementById('estacionSelect');
+            select.innerHTML = '';
+            if (!provincia) {
+                select.innerHTML = '<option value="">Selecciona una provincia primero</option>';
+                select.disabled = true;
+                return;
+            }
+            const estaciones = DATA.estaciones.filter(e => e.provincia === provincia);
+            select.innerHTML = '<option value="">Selecciona…</option>';
+            estaciones.forEach(e => {
+                const opt = document.createElement('option');
+                opt.value = e.indicativo;
+                opt.textContent = `${e.nombre} (${e.indicativo})`;
+                select.appendChild(opt);
+            });
+            select.disabled = false;
+        }
+
+        function showStationInfo(indicativo) {
+            const info = document.getElementById('stationInfo');
+            const est = DATA.estaciones.find(e => e.indicativo === indicativo);
+            if (!est) { info.innerHTML = ''; return; }
+            info.innerHTML = `
+                <strong>${est.nombre}</strong><br>
+                Altitud: ${est.altitud ?? '–'} m<br>
+                Coordenadas: ${Number(est.latitud).toFixed(3)}, ${Number(est.longitud).toFixed(3)}
+            `;
+        }
+
+        async function init() {
+            initScene();
+
+            // Olas de calor (opcional, no bloquea si falta el fichero)
+            try {
+                const r = await fetch('datos/olas_calor.csv');
+                if (r.ok) OLAS_DATA = parseOlasCSV(await r.text());
+            } catch (_) {}
+            buildOlasGrid();
+
+            try {
+                const resp = await fetch('datos/temperaturas_visual.json');
+                DATA = await resp.json();
+                GLOBAL_RANGO = [
+                    Math.min(DATA.rangos.tmin[0], DATA.rangos.tmed[0], DATA.rangos.tmax[0]),
+                    Math.max(DATA.rangos.tmin[1], DATA.rangos.tmed[1], DATA.rangos.tmax[1])
+                ];
+            } catch (e) {
+                document.getElementById('noDataMsg').textContent = 'Error cargando datos/temperaturas_visual.json. Genera el fichero con scripts/preparar_datos_visualizacion.py y sirve esta página con un servidor local (python3 -m http.server).';
+                console.error(e);
+                return;
+            }
+
+            populateProvincias();
+
+            document.getElementById('provinciaSelect').addEventListener('change', (e) => {
+                populateEstaciones(e.target.value);
+                currentEstacion = null;
+                renderEstacion(null);
+                document.getElementById('stationInfo').innerHTML = '';
+            });
+
+            document.getElementById('estacionSelect').addEventListener('change', (e) => {
+                currentEstacion = e.target.value || null;
+                showStationInfo(currentEstacion);
+                renderEstacion(currentEstacion);
+            });
+
+            document.querySelectorAll('#metricToggle .toggle-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('#metricToggle .toggle-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    metric = btn.dataset.value;
+                    if (currentEstacion) renderEstacion(currentEstacion);
+                });
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
